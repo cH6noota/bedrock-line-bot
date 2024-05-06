@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  line-bot-bedrock
+
+  Sample SAM Template for line-bot-bedrock
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 30
+    Tracing: Active
+    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
+    LoggingConfig:
+      LogFormat: JSON
+    Environment:
+      Variables:
+        ACCESS_TOKEN: メモしたチャネルアクセストークン
+        CHANNEL_SECRET: メモしたチャネルシークレット
+  Api:
+    TracingEnabled: true
+Resources:
+  LineBotFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: linebotApp/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ParameterTable
+      Architectures:
+      - x86_64
+      Policies:
+      - Statement:
+        - Sid: LogPolicy
+          Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Resource: '*'
+        - Sid: XRayPolicy
+          Effect: Allow
+          Action:
+          - xray:PutTraceSegments
+          - xray:PutTelemetryRecords
+          - xray:GetSamplingRules
+          - xray:GetSamplingTargets
+          - xray:GetSamplingStatisticSummaries
+          Resource: '*'
+        - Sid: BedrockPolicy
+          Effect: Allow
+          Action:
+          - bedrock:InvokeModel
+          - bedrock:ListFoundationModels
+          Resource: '*'
+        - Sid: DynamoDBPolicy
+          Effect: Allow
+          Action:
+          - dynamodb:*
+          Resource: !Sub ${ParameterTable.Arn}
+      Layers:
+        - !Ref LibLayer
+      FunctionUrlConfig:
+        AuthType: NONE
+      # Events:
+      #   LINEBotApi:
+      #     Type: Api # More xinfo about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+      #     Properties:
+      #       Path: /
+      #       Method: post
+
+  LibLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: liblayer/
+      CompatibleRuntimes:
+        - python3.12
+      LayerName: 
+        Fn::Sub: LibLayer-${AWS::StackName}
+    Metadata:
+      BuildMethod: python3.12
+
+  ParameterTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: 
+        Fn::Sub: ParameterTable-${AWS::StackName}
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: 'true'
+# Outputs:
+#   LineBotFunctionUrl:
+#     Description: "Function URLs endpoint"
+#     Value: !GetAtt LineBotFunction.FunctionUrl
